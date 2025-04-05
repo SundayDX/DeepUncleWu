@@ -1,11 +1,16 @@
 export default defineAppConfig({
   pages: [
-    'pages/index/index'
+    'pages/chat/index'
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#fff',
-    navigationBarTitleText: 'WeChat',
-    navigationBarTextStyle: 'black'
+    navigationBarBackgroundColor: '#07c160',
+    navigationBarTitleText: '智能强叔',
+    navigationBarTextStyle: 'white'
+  },
+  permission: {
+    'scope.record': {
+      desc: '录音功能用于语音输入'
+    }
   }
 })

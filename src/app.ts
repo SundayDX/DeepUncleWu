@@ -1,19 +1,21 @@
-import React, { useEffect } from 'react'
+import { Component, PropsWithChildren } from 'react'
 import { useDidShow, useDidHide } from '@tarojs/taro'
+import '@nutui/nutui-react-taro/dist/style.css'
 // 全局样式
 import './app.scss'
 
-function App(props) {
-  // 可以使用所有的 React Hooks
-  useEffect(() => {})
-
+function App({ children }: PropsWithChildren<any>) {
   // 对应 onShow
-  useDidShow(() => {})
+  useDidShow(() => {
+    console.log('App onShow')
+  })
 
   // 对应 onHide
-  useDidHide(() => {})
+  useDidHide(() => {
+    console.log('App onHide')
+  })
 
-  return props.children
+  return children
 }
 
 export default App
