@@ -39,27 +39,162 @@ const ChatPage: React.FC = () => {
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const [scrollTop, setScrollTop] = useState(0)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [hasRecordPermission, setHasRecordPermission] = useState(false)
   const messageListRef = useRef<Message[]>(messages)
   const recorderManager = useRef<Taro.RecorderManager>()
+  const recordingTimer = useRef<NodeJS.Timeout>()
+  const recordingTimeRef = useRef(0) // 添加一个 ref 来跟踪实际的录音时长
+  const MIN_RECORD_TIME = 1 // 最短录音时长（秒）
+  const MAX_RECORD_TIME = 60 // 最长录音时长（秒）
+
+  // 重置录音状态
+  const resetRecordingState = () => {
+    console.log('重置录音状态')
+    setIsRecording(false)
+    if (recordingTimer.current) {
+      clearInterval(recordingTimer.current)
+      recordingTimer.current = undefined
+    }
+    setRecordingTime(0)
+    recordingTimeRef.current = 0
+  }
+
+  // 检查录音权限
+  const checkRecordPermission = async () => {
+    try {
+      const { authSetting } = await Taro.getSetting()
+      if (authSetting['scope.record']) {
+        setHasRecordPermission(true)
+        return true
+      }
+      const { confirm } = await Taro.showModal({
+        title: '需要录音权限',
+        content: '请在设置中开启录音权限',
+        confirmText: '去设置'
+      })
+      if (confirm) {
+        await Taro.openSetting()
+        const { authSetting: newSetting } = await Taro.getSetting()
+        setHasRecordPermission(!!newSetting['scope.record'])
+        return !!newSetting['scope.record']
+      }
+      return false
+    } catch (error) {
+      console.error('检查录音权限失败：', error)
+      return false
+    }
+  }
 
   useEffect(() => {
     // 初始化录音管理器
     recorderManager.current = Taro.getRecorderManager()
 
+    // 监听录音开始事件
+    recorderManager.current.onStart(() => {
+      console.log('录音开始')
+      setIsRecording(true)
+      Taro.vibrateShort({ type: 'medium' })
+      
+      // 重置计时
+      recordingTimeRef.current = 0
+      setRecordingTime(0)
+      
+      // 开始计时
+      recordingTimer.current = setInterval(() => {
+        recordingTimeRef.current += 1
+        console.log('计时：', recordingTimeRef.current)
+        setRecordingTime(recordingTimeRef.current)
+        
+        if (recordingTimeRef.current >= MAX_RECORD_TIME) {
+          console.log('达到最大录音时长')
+          recorderManager.current?.stop()
+        }
+      }, 1000)
+    })
+
     // 监听录音结束事件
-    recorderManager.current.onStop((res) => {
-      console.log('录音文件：', res.tempFilePath)
-      // TODO: 处理录音文件，发送到语音识别 API
+    recorderManager.current.onStop(async (res) => {
+      console.log('录音结束，文件路径：', res.tempFilePath)
+      console.log('当前录音时长：', recordingTimeRef.current)
+      
+      // 保存当前录音时长
+      const finalRecordingTime = recordingTimeRef.current
+      
+      // 检查录音时长
+      if (finalRecordingTime < MIN_RECORD_TIME) {
+        console.log('录音时间太短')
+        Taro.showToast({
+          title: '说话时间太短：' + finalRecordingTime,
+          icon: 'none',
+          duration: 1500
+        })
+        resetRecordingState()
+        return
+      }
+
+      // 添加录音消息
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        content: `[语音消息 ${finalRecordingTime}秒]`,
+        type: 'user',
+        timestamp: Date.now()
+      }
+
+      setMessages(prev => [...prev, newMessage])
+      
+      // 重置录音状态
+      resetRecordingState()
+
+      // TODO: 这里应该调用语音识别 API
+      // 模拟 AI 回复
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        content: '我收到了您的语音消息',
+        type: 'ai',
+        timestamp: Date.now()
+      }
+
+      setTimeout(() => {
+        setMessages(prev => [...prev, aiResponse])
+      }, 1000)
     })
 
     // 监听录音错误事件
     recorderManager.current.onError((res) => {
       console.error('录音错误：', res)
+      resetRecordingState()
       Taro.showToast({
         title: '录音失败',
-        icon: 'error'
+        icon: 'error',
+        duration: 1500
       })
     })
+
+    // 监听录音中断事件
+    recorderManager.current.onInterruptionBegin(() => {
+      console.log('录音被中断')
+      if (isRecording) {
+        recorderManager.current?.stop()
+      }
+    })
+
+    // 监听录音恢复事件
+    recorderManager.current.onInterruptionEnd(() => {
+      console.log('录音中断结束')
+    })
+
+    // 初始检查录音权限
+    checkRecordPermission()
+
+    // 清理函数
+    return () => {
+      console.log('组件卸载，清理录音状态')
+      if (isRecording) {
+        recorderManager.current?.stop()
+      }
+      resetRecordingState()
+    }
   }, [])
 
   // 自动滚动到底部
@@ -112,53 +247,88 @@ const ChatPage: React.FC = () => {
   }
 
   // 开始录音
-  const handleStartRecording = () => {
-    // 检查录音权限
-    Taro.getSetting({
-      success: (res) => {
-        if (!res.authSetting['scope.record']) {
-          Taro.authorize({
-            scope: 'scope.record',
-            success: () => {
-              startRecording()
-            },
-            fail: () => {
-              Taro.showModal({
-                title: '需要录音权限',
-                content: '请在小程序设置中开启录音权限',
-                confirmText: '去设置',
-                success: (modalRes) => {
-                  if (modalRes.confirm) {
-                    Taro.openSetting()
-                  }
-                }
-              })
-            }
-          })
-        } else {
-          startRecording()
-        }
-      }
-    })
-  }
+  const handleTouchStart = async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (isRecording) {
+      console.log('已经在录音中')
+      return
+    }
 
-  // 实际开始录音的函数
-  const startRecording = () => {
-    setIsRecording(true)
-    recorderManager.current?.start({
-      duration: 60000,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      encodeBitRate: 96000,
-      format: 'mp3',
-      frameSize: 50
-    })
+    // 检查录音权限
+    const hasPermission = await checkRecordPermission()
+    if (!hasPermission) {
+      console.log('没有录音权限')
+      return
+    }
+
+    try {
+      console.log('开始录音...')
+      recorderManager.current?.start({
+        duration: MAX_RECORD_TIME * 1000,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        encodeBitRate: 96000,
+        format: 'mp3',
+        frameSize: 50
+      })
+    } catch (error) {
+      console.error('开始录音失败：', error)
+      resetRecordingState()
+      Taro.showToast({
+        title: '录音失败',
+        icon: 'error',
+        duration: 1500
+      })
+    }
   }
 
   // 结束录音
-  const handleStopRecording = () => {
-    setIsRecording(false)
-    recorderManager.current?.stop()
+  const handleTouchEnd = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (!isRecording) {
+      console.log('不在录音状态')
+      return
+    }
+
+    console.log('结束录音...')
+    try {
+      recorderManager.current?.stop()
+    } catch (error) {
+      console.error('停止录音失败：', error)
+      resetRecordingState()
+      Taro.showToast({
+        title: '录音失败',
+        icon: 'error',
+        duration: 1500
+      })
+    }
+  }
+
+  // 取消录音
+  const handleTouchCancel = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (!isRecording) {
+      return
+    }
+
+    resetRecordingState()
+    try {
+      recorderManager.current?.stop()
+    } catch (error) {
+      console.error('取消录音失败：', error)
+    }
+    
+    Taro.showToast({
+      title: '已取消',
+      icon: 'none',
+      duration: 1500
+    })
   }
 
   // 处理输入事件
@@ -254,12 +424,23 @@ const ChatPage: React.FC = () => {
             <>
               <Button className='mode-switch-button' onClick={toggleInputMode}>⌨️</Button>
               <Button
-                className='voice-button'
-                onTouchStart={handleStartRecording}
-                onTouchEnd={handleStopRecording}
+                className={`voice-button ${isRecording ? 'recording' : ''}`}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchCancel}
               >
                 <View className={`voice-text ${isRecording ? 'recording' : ''}`}>
                   {isRecording ? '松开结束' : '按住说话'}
+                </View>
+                <View className={`recording-indicator ${isRecording ? 'show' : ''}`}>
+                  <View className='wave-container'>
+                    <View className='wave' />
+                    <View className='wave' />
+                    <View className='wave' />
+                    <View className='wave' />
+                    <View className='wave' />
+                  </View>
+                  <View className='recording-time'>{recordingTime.toString()}</View>
                 </View>
               </Button>
               <Button className='more-button'>+</Button>

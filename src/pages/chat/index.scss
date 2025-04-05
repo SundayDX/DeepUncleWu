@@ -191,22 +191,93 @@
 
   .voice-button {
     flex: 1;
-    height: 36px !important;
+    height: 24px !important;
     min-height: 24px !important;
-    line-height: 18px !important;
+    line-height: 24px !important;
     background-color: #fff !important;
     border: 0.5px solid rgba(0, 0, 0, 0.1) !important;
     border-radius: 4px;
-    padding: 3px 5px !important;
+    padding: 0 12px !important;
     margin: 0;
+    transition: all 0.2s;
+    position: relative;
+
+    &:active {
+      background-color: #ebebeb !important;
+    }
 
     .voice-text {
       color: rgba(0, 0, 0, 0.3);
       font-size: 17px;
-      display: block;
+      text-align: center;
+      transition: color 0.2s;
 
       &.recording {
         color: #07c160;
+      }
+    }
+
+    .recording-indicator {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 160px;
+      height: 160px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 12px;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+      z-index: 999;
+
+      &.show {
+        opacity: 1;
+      }
+
+      &.too-short {
+        background: rgba(0, 0, 0, 0.8);
+
+        .wave-container {
+          display: none;
+        }
+
+        .recording-time {
+          color: #ff4d4f;
+        }
+      }
+
+      .wave-container {
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 12px;
+
+        .wave {
+          width: 4px;
+          height: 16px;
+          background-color: #07c160;
+          margin: 0 2px;
+          border-radius: 2px;
+          animation: waveAnimation 0.5s ease-in-out infinite;
+
+          @for $i from 1 through 5 {
+            &:nth-child(#{$i}) {
+              animation-delay: $i * 0.1s;
+            }
+          }
+        }
+      }
+
+      .recording-time {
+        font-size: 14px;
+        color: #fff;
       }
     }
   }
@@ -234,5 +305,14 @@
       font-size: 17px;
       line-height: 22px;
     }
+  }
+}
+
+@keyframes waveAnimation {
+  0%, 100% {
+    height: 6px;
+  }
+  50% {
+    height: 16px;
   }
 } 
