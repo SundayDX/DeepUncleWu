@@ -1,0 +1,13 @@
+{
+  "miniprogramRoot": "./",
+  "projectname": "deepunclewu",
+  "description": "智能强叔",
+  "appid": "touristappid",
+  "setting": {
+    "urlCheck": true,
+    "es6": false,
+    "postcss": false,
+    "minified": false
+  },
+  "compileType": "miniprogram"
+}
