@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { View, ScrollView } from '@tarojs/components'
-import { Button, Input } from '@nutui/nutui-react-taro'
+import { View, ScrollView, Textarea } from '@tarojs/components'
+import { Button } from '@nutui/nutui-react-taro'
 import Taro from '@tarojs/taro'
 import './index.scss'
 
@@ -37,6 +37,7 @@ const ChatPage: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false)
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const [scrollTop, setScrollTop] = useState(0)
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
   const messageListRef = useRef<Message[]>(messages)
   const recorderManager = useRef<Taro.RecorderManager>()
 
@@ -152,69 +153,126 @@ const ChatPage: React.FC = () => {
     recorderManager.current?.stop()
   }
 
+  // 处理输入事件
+  const handleInput = (e) => {
+    const value = e.detail.value
+    setInputText(value)
+  }
+
+  // 处理键盘高度变化
+  const handleKeyboardHeightChange = (event) => {
+    const height = event.detail.height
+    setKeyboardHeight(height)
+    // 键盘高度变化时，滚动消息列表到底部
+    Taro.nextTick(() => {
+      setScrollTop(prev => prev + 9999)
+    })
+  }
+
+  // 处理发送事件
+  const handleSend = (e) => {
+    if (e.detail.value.trim()) {
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        content: e.detail.value.trim(),
+        type: 'user',
+        timestamp: Date.now()
+      }
+
+      setMessages(prev => [...prev, newMessage])
+      setInputText('')
+
+      // TODO: 调用 AI API
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        content: '这是一个 AI 回复示例',
+        type: 'ai',
+        timestamp: Date.now()
+      }
+
+      setTimeout(() => {
+        setMessages(prev => [...prev, aiResponse])
+      }, 1000)
+    }
+  }
+
   return (
     <View className='chat-page'>
-      <ScrollView
-        className='message-list'
-        scrollY
-        scrollTop={scrollTop}
-        scrollWithAnimation
-        enhanced
-        bounces={false}
-        showScrollbar={false}
-      >
-        {messages.map(message => (
-          <View
-            key={message.id}
-            className={`message-item ${message.type === 'user' ? 'user' : message.type === 'ai' ? 'ai' : 'system'}`}
-          >
-            <View className='avatar'>
-              {message.type === 'user' ? '👤' : message.type === 'ai' ? '🤖' : '🤖'}
-            </View>
-            <View className='message-wrapper'>
-              <View className='message-content'>{message.content}</View>
-              <View className='message-time'>{formatTime(message.timestamp)}</View>
-            </View>
-          </View>
-        ))}
-      </ScrollView>
-
-      <View className='input-area'>
-        <View className='input-box'>
-          <Button
-            className='mode-switch-button'
-            type='default'
-            onClick={toggleInputMode}
-          >
-            {isVoiceMode ? '⌨️' : '🎤'}
-          </Button>
-          {isVoiceMode ? (
-            <Button
-              className='voice-button'
-              type='default'
-              onTouchStart={handleStartRecording}
-              onTouchEnd={handleStopRecording}
+      <View className='chat-container'>
+        <ScrollView
+          className='message-list'
+          scrollY
+          scrollTop={scrollTop}
+          scrollWithAnimation
+          enhanced
+          bounces={false}
+          showScrollbar={false}
+        >
+          {messages.map(message => (
+            <View
+              key={message.id}
+              className={`message-item ${message.type === 'user' ? 'user' : message.type === 'ai' ? 'ai' : 'system'}`}
             >
-              <View className={`voice-text ${isRecording ? 'recording' : ''}`}>
-                {isRecording ? '松开结束' : '按住说话'}
-              </View>
-            </Button>
+              {message.type !== 'system' ? (
+                <>
+                  <View className='avatar'>
+                    {message.type === 'user' ? '👤' : '🤖'}
+                  </View>
+                  <View className='message-wrapper'>
+                    <View className='message-content'>{message.content}</View>
+                    <View className='message-time'>{formatTime(message.timestamp)}</View>
+                  </View>
+                </>
+              ) : (
+                <View className='message-wrapper'>
+                  <View className='message-content system-content'>{message.content}</View>
+                </View>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+
+      <View 
+        className='input-area' 
+        style={{ 
+          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : 'constant(safe-area-inset-bottom)'
+        }}
+      >
+        <View className='input-box'>
+          {isVoiceMode ? (
+            <>
+              <Button className='mode-switch-button' onClick={toggleInputMode}>⌨️</Button>
+              <Button
+                className='voice-button'
+                onTouchStart={handleStartRecording}
+                onTouchEnd={handleStopRecording}
+              >
+                <View className={`voice-text ${isRecording ? 'recording' : ''}`}>
+                  {isRecording ? '松开结束' : '按住说话'}
+                </View>
+              </Button>
+              <Button className='more-button'>+</Button>
+            </>
           ) : (
             <>
-              <Input
+              <Button className='mode-switch-button' onClick={toggleInputMode}>🎤</Button>
+              <Textarea
                 className='text-input'
                 value={inputText}
-                onChange={(val) => setInputText(val)}
+                onInput={handleInput}
+                onKeyboardHeightChange={handleKeyboardHeightChange}
+                onConfirm={handleSend}
                 placeholder='输入消息...'
+                showConfirmBar={false}
+                adjustPosition={false}
+                autoHeight
+                confirmType='send'
+                fixed
+                cursorSpacing={8}
+                maxlength={500}
               />
-              <Button
-                className='send-button'
-                type='primary'
-                onClick={handleSendMessage}
-                disabled={!inputText.trim()}
-              >
-                发送
-              </Button>
+              <Button className='more-button'>+</Button>
             </>
           )}
         </View>
