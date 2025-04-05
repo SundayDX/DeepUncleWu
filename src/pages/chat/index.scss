@@ -43,12 +43,14 @@
         margin-right: 12px;
         margin-left: 0;
         align-items: flex-end;
-      }
 
-      .message-content {
-        background-color: #95ec69;
-        color: #000;
-        border-radius: 20px 4px 20px 20px;
+        .text-message {
+          .message-content {
+            background-color: #95ec69;
+            color: #000;
+            border-radius: 20px 4px 20px 20px;
+          }
+        }
       }
 
       .message-time {
@@ -61,11 +63,13 @@
         margin-left: 12px;
         margin-right: 0;
         align-items: flex-start;
-      }
 
-      .message-content {
-        background-color: #fff;
-        border-radius: 4px 20px 20px 20px;
+        .text-message {
+          .message-content {
+            background-color: #fff;
+            border-radius: 4px 20px 20px 20px;
+          }
+        }
       }
     }
 
@@ -116,6 +120,7 @@
     flex: 1;
     min-width: 0;
     max-width: calc(100% - 60px);
+    align-items: flex-start;
   }
 
   .message-content {
@@ -125,7 +130,8 @@
     line-height: 1.4;
     max-width: 85%;
     min-width: 0;
-    word-break: break-all;
+    word-break: break-word;
+    word-wrap: break-word;
     white-space: pre-wrap;
     box-sizing: border-box;
     overflow-wrap: break-word;
@@ -456,5 +462,62 @@
   }
   100% {
     transform: scale(1);
+  }
+}
+
+.text-message {
+  position: relative;
+  display: inline-block;
+  max-width: 85%;
+  min-width: 0;
+
+  .message-content {
+    display: inline-block;
+    width: auto;
+    max-width: 100%;
+    word-break: break-word;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    box-sizing: border-box;
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 16px;
+    background-color: #333;
+    margin-left: 2px;
+    animation: blink 1s infinite;
+    vertical-align: middle;
+  }
+
+  .progress-bar {
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 1px;
+    overflow: hidden;
+
+    .progress-inner {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      background-color: #07C160;
+      border-radius: 1px;
+      transition: width 0.3s ease-out;
+    }
+  }
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
   }
 } 

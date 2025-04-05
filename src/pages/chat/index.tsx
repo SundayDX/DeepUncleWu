@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { View, ScrollView, Textarea } from '@tarojs/components'
+import { View, ScrollView, Textarea, Text } from '@tarojs/components'
 import { Button } from '@nutui/nutui-react-taro'
 import Taro from '@tarojs/taro'
 import { useLoad } from '@tarojs/taro'
+import { sendTextMessage, sendVoiceMessage } from '../../services/api'
 import './index.scss'
 
 interface Message {
@@ -12,6 +13,8 @@ interface Message {
   timestamp: number
   voiceUrl?: string // 语音消息的临时文件路径
   duration?: number // 语音消息时长（秒）
+  streamingContent?: string // 用于流式渲染的内容
+  progress?: number // 添加进度属性
 }
 
 const formatTime = (timestamp: number) => {
@@ -57,14 +60,13 @@ const ChatPage: React.FC = () => {
   const isCanceledRef = useRef(false)
   const shouldStartRef = useRef(false)
   const MIN_RECORD_TIME = 1 // 最短录音时长（秒）
-  const MAX_RECORD_TIME = 60 // 最长录音时长（秒）
+  const MAX_RECORD_TIME = 120 // 最长录音时长（秒）
   const MIN_PRESS_TIME = 300 // 最短按压时间（毫秒）
   const START_TIMEOUT = 1000 // 录音启动超时时间（毫秒）
   const innerAudioContext = useRef<Taro.InnerAudioContext>()
 
   // 重置录音状态
   const resetRecordingState = (preserveCancel = false) => {
-    console.log('重置录音状态，preserveCancel:', preserveCancel)
     setIsRecording(false)
     isStartingRef.current = false
     shouldStartRef.current = false
@@ -89,10 +91,7 @@ const ChatPage: React.FC = () => {
     try {
       // 只有在真正开始录音的情况下才调用 stop
       if (recorderManager.current && isRecording) {
-        console.log('停止录音...')
         recorderManager.current.stop()
-      } else {
-        console.log('未在录音状态，跳过停止操作')
       }
     } catch (error) {
       console.error('停止录音失败，详细错误：', {
@@ -123,24 +122,53 @@ const ChatPage: React.FC = () => {
   const checkRecordPermission = async () => {
     try {
       const { authSetting } = await Taro.getSetting()
+      
+      // 如果已经授权，直接返回 true
       if (authSetting['scope.record']) {
-        setHasRecordPermission(true)
         return true
       }
+
+      // 如果未授权，发起授权请求
+      const { errMsg } = await Taro.authorize({
+        scope: 'scope.record'
+      })
+      
+      if (errMsg === 'authorize:ok') {
+        return true
+      }
+
+      // 如果授权失败，提示用户去设置页面开启权限
       const { confirm } = await Taro.showModal({
         title: '需要录音权限',
-        content: '请在设置中开启录音权限',
-        confirmText: '去设置'
+        content: '请在设置中开启录音权限，以便使用语音功能',
+        confirmText: '去设置',
+        cancelText: '取消'
       })
+      
       if (confirm) {
         await Taro.openSetting()
-        const { authSetting: newSetting } = await Taro.getSetting()
-        setHasRecordPermission(!!newSetting['scope.record'])
-        return !!newSetting['scope.record']
+        // 重新检查权限
+        const { authSetting: newAuthSetting } = await Taro.getSetting()
+        return !!newAuthSetting['scope.record']
       }
+
       return false
     } catch (error) {
-      console.error('检查录音权限失败：', error)
+      console.error('检查录音权限失败：', {
+        error,
+        message: error?.message,
+        errMsg: error?.errMsg
+      })
+      
+      // 如果是用户拒绝授权，给出友好提示
+      if (error.errMsg?.includes('authorize:fail')) {
+        Taro.showToast({
+          title: '需要录音权限才能发送语音',
+          icon: 'none',
+          duration: 2000
+        })
+      }
+      
       return false
     }
   }
@@ -154,11 +182,9 @@ const ChatPage: React.FC = () => {
     innerAudioContext.current.volume = 1.0 // 音量，范围 0~1
     
     innerAudioContext.current.onPlay(() => {
-      console.log('音频开始播放')
     })
     
     innerAudioContext.current.onEnded(() => {
-      console.log('音频播放结束')
       setPlayingMessageId(null)
     })
     
@@ -173,19 +199,15 @@ const ChatPage: React.FC = () => {
     })
 
     innerAudioContext.current.onCanplay(() => {
-      console.log('音频准备就绪，可以播放')
     })
 
     innerAudioContext.current.onWaiting(() => {
-      console.log('音频加载中...')
     })
 
     innerAudioContext.current.onSeeking(() => {
-      console.log('音频跳转中...')
     })
 
     innerAudioContext.current.onSeeked(() => {
-      console.log('音频跳转完成')
     })
 
     return () => {
@@ -193,161 +215,47 @@ const ChatPage: React.FC = () => {
     }
   }, [])
 
-  useEffect(() => {
-    // 初始化录音管理器
-    recorderManager.current = Taro.getRecorderManager()
-
-    // 监听录音开始事件
-    recorderManager.current.onStart(() => {
-      console.log('录音开始')
-      // 清除启动超时
-      if (startTimeoutRef.current) {
-        clearTimeout(startTimeoutRef.current)
-        startTimeoutRef.current = undefined
-      }
-      setIsRecording(true)
-      isStartingRef.current = false
-      Taro.vibrateShort({ type: 'medium' })
+  // 初始化录音管理器
+  const initRecorderManager = () => {
+    if (!recorderManager.current) {
+      recorderManager.current = Taro.getRecorderManager()
       
-      // 重置计时
-      recordingTimeRef.current = 0
-      setRecordingTime(0)
-      
-      // 开始计时
-      recordingTimer.current = setInterval(() => {
-        console.log('当前计时状态：', {
-          isRecording,
-          recordingTimeRef: recordingTimeRef.current,
-          recordingTime
-        })
-        recordingTimeRef.current += 1
-        setRecordingTime(prev => prev + 1)
-        
-        if (recordingTimeRef.current >= MAX_RECORD_TIME) {
-          console.log('达到最大录音时长')
-          stopRecording()
+      recorderManager.current.onStart(() => {
+        console.log('录音开始')
+        isStartingRef.current = false
+        setIsRecording(true)
+        // 清除启动超时定时器
+        if (startTimeoutRef.current) {
+          clearTimeout(startTimeoutRef.current)
+          startTimeoutRef.current = null
         }
-      }, 1000)
-    })
-
-    // 监听录音结束事件
-    recorderManager.current.onStop(async (res) => {
-      console.log('录音结束，详细信息：', {
-        tempFilePath: res.tempFilePath,
-        duration: res.duration,
-        recordingTimeRef: recordingTimeRef.current,
-        fileSize: res.fileSize
       })
-      
-      // 确保时长至少为1秒
-      const finalRecordingTime = Math.max(1, Math.ceil(res.duration / 1000))
-      const pressDuration = Date.now() - touchStartTimeRef.current
-      console.log('最终按压时长：', pressDuration, 'ms')
 
-      resetRecordingState()
-
-      if (pressDuration < MIN_PRESS_TIME) {
-        console.log('按压时间太短')
-        Taro.showToast({
-          title: '按住时间太短',
-          icon: 'none',
-          duration: 800
-        })
-        return
-      }
-      
-      if (finalRecordingTime < MIN_RECORD_TIME) {
-        console.log('录音时间太短，实际时长：', finalRecordingTime)
-        Taro.showToast({
-          title: '说话时间太短：' + finalRecordingTime,
-          icon: 'none',
-          duration: 800
-        })
-        return
-      }
-
-      try {
-        // 保存语音文件
-        const savedVoicePath = await saveVoiceFile(res.tempFilePath)
-
-        // 添加录音消息
-        const newMessage: Message = {
-          id: Date.now().toString(),
-          content: `[语音消息 ${finalRecordingTime}秒]`,
-          type: 'user',
-          timestamp: Date.now(),
-          voiceUrl: savedVoicePath,
-          duration: finalRecordingTime
+      recorderManager.current.onStop(async (res) => {
+        console.log('录音结束：', res)
+        const { tempFilePath, duration } = res
+        if (!tempFilePath) {
+          console.error('录音结果中没有临时文件路径')
+          return
         }
+        // 处理录音结果...
+      })
 
-        setMessages(prev => [...prev, newMessage])
-
-        // TODO: 这里应该调用语音识别 API
-        const aiResponse: Message = {
-          id: (Date.now() + 1).toString(),
-          content: '我收到了您的语音消息',
-          type: 'ai',
-          timestamp: Date.now()
-        }
-
-        setTimeout(() => {
-          setMessages(prev => [...prev, aiResponse])
-        }, 1000)
-      } catch (error) {
-        console.error('保存语音消息失败：', error)
+      recorderManager.current.onError((res) => {
+        console.error('录音错误：', res)
         Taro.showToast({
-          title: '保存语音失败',
-          icon: 'error',
+          title: `录音失败：${res?.errMsg || '录音错误'}`,
+          icon: 'none',
           duration: 2000
         })
-      }
-    })
-
-    // 监听录音错误事件
-    recorderManager.current.onError((res) => {
-      console.error('录音错误，详细信息：', {
-        ...res,
-        state: {
-          isRecording,
-          isStarting: isStartingRef.current,
-          shouldStart: shouldStartRef.current,
-          isCanceled: isCanceledRef.current,
-          touchStartTime: touchStartTimeRef.current,
-          recordingTime: recordingTimeRef.current
-        }
+        resetRecordingState(true)
       })
-      resetRecordingState()
-      Taro.showToast({
-        title: `录音失败：${res?.errMsg || '录音错误'}`,
-        icon: 'error',
-        duration: 2000
-      })
-    })
-
-    // 监听录音中断事件
-    recorderManager.current.onInterruptionBegin(() => {
-      console.log('录音被中断')
-      if (isRecording) {
-        recorderManager.current?.stop()
-      }
-    })
-
-    // 监听录音恢复事件
-    recorderManager.current.onInterruptionEnd(() => {
-      console.log('录音中断结束')
-    })
-
-    // 初始检查录音权限
-    checkRecordPermission()
-
-    // 清理函数
-    return () => {
-      console.log('组件卸载，清理录音状态')
-      if (isRecording) {
-        recorderManager.current?.stop()
-      }
-      resetRecordingState()
     }
+  }
+
+  // 在组件挂载时初始化录音管理器
+  useEffect(() => {
+    initRecorderManager()
   }, [])
 
   // 自动滚动到底部
@@ -366,33 +274,6 @@ const ChatPage: React.FC = () => {
     // 如果需要禁用页面滚动，可以在页面配置中设置
   })
 
-  // 发送文本消息
-  const handleSendMessage = async () => {
-    if (!inputText.trim()) return
-
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: inputText,
-      type: 'user',
-      timestamp: Date.now()
-    }
-
-    setMessages(prev => [...prev, newMessage])
-    setInputText('')
-
-    // TODO: 调用 AI API
-    const aiResponse: Message = {
-      id: (Date.now() + 1).toString(),
-      content: '这是一个 AI 回复示例',
-      type: 'ai',
-      timestamp: Date.now()
-    }
-
-    setTimeout(() => {
-      setMessages(prev => [...prev, aiResponse])
-    }, 1000)
-  }
-
   // 切换输入模式
   const toggleInputMode = () => {
     setIsVoiceMode(prev => !prev)
@@ -405,7 +286,6 @@ const ChatPage: React.FC = () => {
     e.stopPropagation()
     
     if (isRecording || isStartingRef.current) {
-      console.log('已经在录音中或正在启动录音')
       return
     }
 
@@ -418,7 +298,6 @@ const ChatPage: React.FC = () => {
 
     // 设置启动超时
     startTimeoutRef.current = setTimeout(() => {
-      console.log('录音启动超时')
       if (isStartingRef.current) {
         resetRecordingState(true)
         const timeoutError = {
@@ -450,13 +329,11 @@ const ChatPage: React.FC = () => {
 
       // 检查是否应该开始录音
       if (!shouldStartRef.current) {
-        console.log('录音已被取消，不执行启动')
         resetRecordingState(true)
         return
       }
 
       // 开始录音
-      console.log('开始录音...')
       recorderManager.current?.start({
         duration: MAX_RECORD_TIME * 1000,
         sampleRate: 16000,
@@ -496,23 +373,16 @@ const ChatPage: React.FC = () => {
     e.stopPropagation()
     
     const pressDuration = Date.now() - touchStartTimeRef.current
-    console.log('按压时长：', pressDuration, 'ms')
 
     // 如果按压时间太短，直接取消录音
     if (pressDuration < MIN_PRESS_TIME) {
-      console.log('按压时间太短，取消录音')
       shouldStartRef.current = false
       isCanceledRef.current = true
       
       // 只有在真正开始录音或正在启动时才需要停止
       if (isStartingRef.current || isRecording) {
-        console.log('取消录音，当前状态：', {
-          isRecording,
-          isStarting: isStartingRef.current
-        })
         stopRecording(true)
       } else {
-        console.log('录音尚未开始，直接重置状态')
         resetRecordingState(true)
       }
       
@@ -525,12 +395,10 @@ const ChatPage: React.FC = () => {
     }
 
     if (!isRecording && !isStartingRef.current) {
-      console.log('不在录音状态且未在启动中，跳过停止操作')
       return
     }
 
     shouldStartRef.current = false
-    console.log('结束录音...')
     stopRecording(false)
   }
 
@@ -540,16 +408,11 @@ const ChatPage: React.FC = () => {
     e.stopPropagation()
     
     if (!isRecording && !isStartingRef.current) {
-      console.log('不在录音状态且未在启动中，跳过取消操作')
       return
     }
 
     shouldStartRef.current = false
     isCanceledRef.current = true
-    console.log('取消录音，当前状态：', {
-      isRecording,
-      isStarting: isStartingRef.current
-    })
     stopRecording(true)
     Taro.showToast({
       title: '已取消',
@@ -575,30 +438,147 @@ const ChatPage: React.FC = () => {
   }
 
   // 处理发送事件
-  const handleSend = (e) => {
-    if (e.detail.value.trim()) {
-      const newMessage: Message = {
+  const handleSend = async (e) => {
+    const content = e.detail.value.trim()
+    if (!content) return
+
+    try {
+      
+      // 添加用户消息
+      const userMessage: Message = {
         id: Date.now().toString(),
-        content: e.detail.value.trim(),
+        content,
         type: 'user',
         timestamp: Date.now()
       }
-
-      setMessages(prev => [...prev, newMessage])
+      
+      setMessages(prev => [...prev, userMessage])
       setInputText('')
 
-      // TODO: 调用 AI API
-      const aiResponse: Message = {
+      // 创建一个临时的 AI 消息用于流式渲染
+      const tempAiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: '这是一个 AI 回复示例',
+        content: '',
         type: 'ai',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        streamingContent: '',
+        progress: 0
       }
+      
+      setMessages(prev => [...prev, tempAiMessage])
 
-      setTimeout(() => {
-        setMessages(prev => [...prev, aiResponse])
-      }, 1000)
+      // 发送消息到 AI，并处理流式响应
+      const aiResponse = await sendTextMessage(
+        content,
+        (chunk) => {
+          // 更新临时消息的流式内容
+          setMessages(prev => {
+            const lastMessage = prev[prev.length - 1]
+            if (lastMessage.id === tempAiMessage.id) {
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...lastMessage,
+                  content: lastMessage.content + chunk,
+                  streamingContent: lastMessage.content + chunk
+                }
+              ]
+            }
+            return prev
+          })
+        },
+        (progress) => {
+          // 更新进度
+          setMessages(prev => {
+            const lastMessage = prev[prev.length - 1]
+            if (lastMessage.id === tempAiMessage.id) {
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...lastMessage,
+                  progress
+                }
+              ]
+            }
+            return prev
+          })
+        }
+      )
+      
+      // 更新最终的 AI 消息
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1]
+        if (lastMessage.id === tempAiMessage.id) {
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...aiResponse,
+              content: lastMessage.content, // 使用累积的内容
+              progress: 100 // 设置最终进度为 100
+            }
+          ]
+        }
+        return prev
+      })
+    } catch (error) {
+      console.error('发送消息失败：', error)
+      Taro.showToast({
+        title: '发送失败，请重试',
+        icon: 'error',
+        duration: 2000
+      })
     }
+  }
+
+  // 渲染消息内容
+  const renderMessageContent = (message: Message) => {
+    if (message.voiceUrl) {
+      return (
+        <View className='voice-message' onClick={() => handlePlayVoice(message)}>
+          <View className='voice-content'>
+            {message.type === 'user' ? (
+              <>
+                <Text className='duration'>{message.duration}"</Text>
+                <View className={`voice-wave ${playingMessageId === message.id ? 'playing' : ''}`}>
+                  <View className='wave-line'></View>
+                  <View className='wave-line'></View>
+                  <View className='wave-line'></View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View className={`voice-wave ${playingMessageId === message.id ? 'playing' : ''}`}>
+                  <View className='wave-line'></View>
+                  <View className='wave-line'></View>
+                  <View className='wave-line'></View>
+                </View>
+                <Text className='duration'>{message.duration}"</Text>
+              </>
+            )}
+          </View>
+        </View>
+      )
+    }
+
+    // 文本消息
+    return (
+      <View className='text-message'>
+        <View className='message-content'>
+          {message.content}
+          {message.streamingContent !== undefined && message.content === '' && (
+            <Text className='cursor'>|</Text>
+          )}
+        </View>
+        {message.type === 'ai' && message.progress !== undefined && message.progress < 100 && (
+          <View className='progress-bar'>
+            <View 
+              className='progress-inner' 
+              style={{ width: `${message.progress}%` }}
+            />
+          </View>
+        )}
+      </View>
+    )
   }
 
   // 加载历史消息
@@ -639,7 +619,6 @@ const ChatPage: React.FC = () => {
           tempFilePath,
           filePath: savedPath,
           success: (res) => {
-            console.log('语音文件保存成功：', res)
             resolve(res)
           },
           fail: (error) => {
@@ -649,7 +628,6 @@ const ChatPage: React.FC = () => {
         })
       })
 
-      console.log('语音文件已保存到：', savedPath)
       return savedPath
     } catch (error) {
       console.error('保存语音文件失败，详细错误：', {
@@ -691,7 +669,6 @@ const ChatPage: React.FC = () => {
 
       // 如果正在播放同一条消息，则停止播放
       if (playingMessageId === message.id) {
-        console.log('停止播放当前语音')
         innerAudioContext.current?.stop()
         setPlayingMessageId(null)
         return
@@ -699,7 +676,6 @@ const ChatPage: React.FC = () => {
 
       // 如果正在播放其他消息，先停止
       if (playingMessageId) {
-        console.log('停止播放其他语音')
         innerAudioContext.current?.stop()
       }
 
@@ -709,12 +685,10 @@ const ChatPage: React.FC = () => {
         fs.access({
           path: message.voiceUrl!,
           success: () => {
-            console.log('语音文件存在，可以访问')
             // 读取文件内容以验证
             fs.readFile({
               filePath: message.voiceUrl!,
               success: (res) => {
-                console.log('成功读取语音文件，文件大小：', (res.data as ArrayBuffer).byteLength)
                 resolve()
               },
               fail: (error) => {
@@ -745,11 +719,9 @@ const ChatPage: React.FC = () => {
       
       // 绑定事件监听
       innerAudioContext.current.onPlay(() => {
-        console.log('音频开始播放')
       })
       
       innerAudioContext.current.onEnded(() => {
-        console.log('音频播放结束')
         setPlayingMessageId(null)
       })
       
@@ -764,19 +736,15 @@ const ChatPage: React.FC = () => {
       })
 
       innerAudioContext.current.onCanplay(() => {
-        console.log('音频准备就绪，可以播放')
       })
 
       innerAudioContext.current.onTimeUpdate(() => {
-        console.log('播放进度更新：', innerAudioContext.current?.currentTime)
       })
 
       // 设置音频源并播放
-      console.log('设置音频源：', message.voiceUrl)
       innerAudioContext.current.src = message.voiceUrl
 
       // 开始播放
-      console.log('开始播放音频')
       innerAudioContext.current.play()
       setPlayingMessageId(message.id)
     } catch (error) {
@@ -819,36 +787,7 @@ const ChatPage: React.FC = () => {
                     {message.type === 'user' ? '👤' : '🤖'}
                   </View>
                   <View className='message-wrapper'>
-                    {message.voiceUrl ? (
-                      <View 
-                        className={`message-content voice-message ${playingMessageId === message.id ? 'playing' : ''}`}
-                        onClick={() => handlePlayVoice(message)}
-                      >
-                        <View className='voice-content'>
-                          {message.type === 'user' ? (
-                            <>
-                              <View className='voice-duration'>{message.duration}″</View>
-                              <View className='voice-wave'>
-                                <View className='wave-line' />
-                                <View className='wave-line' />
-                                <View className='wave-line' />
-                              </View>
-                            </>
-                          ) : (
-                            <>
-                              <View className='voice-wave reverse'>
-                                <View className='wave-line' />
-                                <View className='wave-line' />
-                                <View className='wave-line' />
-                              </View>
-                              <View className='voice-duration'>{message.duration}″</View>
-                            </>
-                          )}
-                        </View>
-                      </View>
-                    ) : (
-                      <View className='message-content'>{message.content}</View>
-                    )}
+                    {renderMessageContent(message)}
                     <View className='message-time'>{formatTime(message.timestamp)}</View>
                   </View>
                 </>
