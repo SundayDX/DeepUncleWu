@@ -29,7 +29,6 @@
         background-color: #95ec69;
         color: #000;
         border-radius: 20px 4px 20px 20px;
-        word-wrap: break-word;
       }
 
       .message-time {
@@ -58,6 +57,8 @@
       .message-wrapper {
         margin: 0;
         align-items: center;
+        width: auto;
+        max-width: 80%;
       }
 
       .message-content {
@@ -66,7 +67,9 @@
         font-size: 14px;
         padding: 4px 12px;
         border-radius: 12px;
-        max-width: none;
+        max-width: 100%;
+        width: auto;
+        display: inline;
       }
 
       .message-time {
@@ -95,16 +98,22 @@
   .message-wrapper {
     display: flex;
     flex-direction: column;
-    max-width: calc(100% - 52px); // 40px avatar + 12px margin
+    flex: 1;
+    min-width: 0;
+    max-width: calc(100% - 60px);
   }
 
   .message-content {
+    display: inline-block;
     padding: 8px 12px;
     font-size: 16px;
     line-height: 1.4;
-    max-width: 70%;
-    word-break: break-word;
-    display: inline-block;
+    max-width: 85%;
+    min-width: 0;
+    word-break: break-all;
+    white-space: pre-wrap;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
   }
 
   .message-time {
