@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { View, ScrollView, Textarea } from '@tarojs/components'
 import { Button } from '@nutui/nutui-react-taro'
 import Taro from '@tarojs/taro'
+import { useLoad } from '@tarojs/taro'
 import './index.scss'
 
 interface Message {
@@ -69,6 +70,13 @@ const ChatPage: React.FC = () => {
       setScrollTop(prev => prev + 9999)
     })
   }, [messages])
+
+  useLoad(() => {
+    // 禁用页面整体的弹性滚动
+    document.body.style.overflow = 'hidden'
+    // Taro.setPageStyle 在当前版本不存在，使用替代方案
+    // 如果需要禁用页面滚动，可以在页面配置中设置
+  })
 
   // 发送文本消息
   const handleSendMessage = async () => {

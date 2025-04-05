@@ -5,6 +5,7 @@
   background-color: #ededed;
   box-sizing: border-box;
   position: relative;
+  overflow: hidden;
   
   .chat-container {
     flex: 1;
@@ -12,6 +13,7 @@
     overflow: hidden;
     margin-bottom: calc(50px + constant(safe-area-inset-bottom));
     margin-bottom: calc(50px + env(safe-area-inset-bottom));
+    background-color: #ededed;
   }
 
   .message-list {
@@ -20,10 +22,12 @@
     left: 0;
     right: 0;
     bottom: 0;
-    overflow-y: auto;
+    overflow-y: scroll;
     -webkit-overflow-scrolling: touch;
     padding: 12px 0;
     box-sizing: border-box;
+    background-color: #ededed;
+    overscroll-behavior: contain;
   }
 
   .message-item {

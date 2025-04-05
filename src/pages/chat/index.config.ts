@@ -1,5 +1,6 @@
 export default {
-  navigationBarTitleText: '智能强叔',
+  navigationBarTitleText: '智能助手',
+  disableScroll: true,
   navigationBarBackgroundColor: '#07c160',
   navigationBarTextStyle: 'white'
 } 
