@@ -207,10 +207,12 @@ const ChatPage: React.FC = () => {
           enhanced
           bounces={false}
           showScrollbar={false}
+          scrollIntoView={`msg-${messages[messages.length - 1]?.id}`}
         >
           {messages.map(message => (
             <View
               key={message.id}
+              id={`msg-${message.id}`}
               className={`message-item ${message.type === 'user' ? 'user' : message.type === 'ai' ? 'ai' : 'system'}`}
             >
               {message.type !== 'system' ? (
@@ -234,9 +236,9 @@ const ChatPage: React.FC = () => {
       </View>
 
       <View 
-        className='input-area' 
+        className={`input-area ${keyboardHeight === 0 ? 'with-safe-area' : ''}`}
         style={{ 
-          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : 'constant(safe-area-inset-bottom)'
+          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : '0'
         }}
       >
         <View className='input-box'>
