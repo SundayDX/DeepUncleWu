@@ -4,13 +4,20 @@ export default defineAppConfig({
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#07c160',
+    navigationBarBackgroundColor: '#fff',
     navigationBarTitleText: '智能强叔',
-    navigationBarTextStyle: 'white'
+    navigationBarTextStyle: 'black'
   },
   permission: {
     'scope.record': {
-      desc: '录音功能用于语音输入'
+      desc: '录音功能用于语音交互'
     }
-  }
+  },
+  requiredPrivateInfos: [
+    'getLocation',
+    'chooseLocation',
+    'onLocationChange',
+    'startLocationUpdateBackground',
+    'chooseAddress'
+  ]
 })
