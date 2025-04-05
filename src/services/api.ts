@@ -103,7 +103,7 @@ export async function sendTextMessage(
         try {
           let chunk: string
           if (response.data instanceof ArrayBuffer) {
-            chunk = new TextDecoder().decode(response.data)
+            chunk = String.fromCharCode.apply(null, new Uint8Array(response.data))
           } else if (typeof response.data === 'string') {
             chunk = response.data
           } else {
